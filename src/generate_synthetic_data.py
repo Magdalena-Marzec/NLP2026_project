@@ -17,8 +17,8 @@ import sys
 
 # Define constants for biological simulation
 TISSUES = [
-    "BRAIN", "MIDGUT", "HINDGUT", "MALPIGHIAN_TUBULE", 
-    "OVARY", "TESTIS", "FAT_BODY", "EYE"
+    "ABDOMEN", "DIGESTIVE", "GENITALIA", "GONADS", 
+    "HEAD", "REPRODUCTIVE", "THORAX"
 ]
 NUCLEOTIDES = ["A", "C", "T", "G"]
 # Real promoters are often AT-rich; we skew the nucleotide weights accordingly
@@ -125,7 +125,7 @@ def calculate_vst_expression(tissue, sequence, motif):
     basal_expression = random.gammavariate(alpha=2.0, beta=1.5)
     
     # Check for the causal interaction (Happy Path verification rule)
-    if tissue == "BRAIN" and (motif in sequence):
+    if tissue == "HEAD" and (motif in sequence):
         # High upregulation override simulating a strong tissue-specific transcription factor activation
         specific_activation = random.uniform(11.0, 13.0)
         final_score = specific_activation + random.normalvariate(0.0, 0.5)
@@ -171,7 +171,7 @@ def main():
                 utr_5 = generate_random_dna(utr_len)
                 
                 # Conditionally plant the motif to make sure the causal graph has enough positive examples
-                if tissue == "BRAIN" and random.random() < args.motif_inject_rate:
+                if tissue == "HEAD" and random.random() < args.motif_inject_rate:
                     # Randomly inject into either the promoter or the UTR region
                     if random.choice([True, False]):
                         promoter = inject_motif(promoter, TARGET_MOTIF)
