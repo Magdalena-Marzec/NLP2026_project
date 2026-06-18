@@ -85,12 +85,51 @@ def build_dataloaders(
     return train_loader, val_loader, normalizer
 
 
+def get_lr_for_epoch(epoch: int, config: dict) -> float:
+    """Compute the learning rate for a 1-indexed training epoch.
+
+    Linearly ramps from ``start_lr`` at epoch 1 to ``max_lr`` at epoch
+    ``warmup_period``, then holds ``max_lr`` constant.
+
+    Args:
+        epoch: Current training epoch (1-indexed).
+        config: Hyperparameter dict with ``start_lr``, ``max_lr``, and
+            ``warmup_period``.
+
+    Returns:
+        Learning rate to use for the given epoch.
+    """
+    start_lr = config["start_lr"]
+    max_lr = config["max_lr"]
+    warmup_period = config["warmup_period"]
+
+    if warmup_period <= 1:
+        return max_lr
+    if epoch >= warmup_period:
+        return max_lr
+
+    progress = (epoch - 1) / (warmup_period - 1)
+    return start_lr + progress * (max_lr - start_lr)
+
+
+def set_optimizer_lr(optimizer: torch.optim.Optimizer, lr: float) -> None:
+    """Set the learning rate for all optimizer parameter groups.
+
+    Args:
+        optimizer: Optimizer whose param groups will be updated.
+        lr: New learning rate value.
+    """
+    for param_group in optimizer.param_groups:
+        param_group["lr"] = lr
+
+
 def run_training_epoch(
     model: nn.Module,
     train_loader: DataLoader,
     optimizer: torch.optim.Optimizer,
     criterion: nn.Module,
     device: str,
+    gradient_accumulation_steps: int,
 ) -> float:
     """Run one training epoch and return the mean MSE loss.
 
@@ -100,6 +139,7 @@ def run_training_epoch(
         optimizer: Optimizer instance (AdamW).
         criterion: Loss function (MSELoss).
         device: Target device string.
+        gradient_accumulation_steps: Micro-batches to accumulate before stepping.
 
     Returns:
         Mean training MSE loss across all batches.
@@ -107,20 +147,30 @@ def run_training_epoch(
     model.train()
     total_loss = 0.0
     num_batches = 0
+    accum_steps = gradient_accumulation_steps
+    num_train_batches = len(train_loader)
 
-    for sequences, mask, targets in train_loader:
+    optimizer.zero_grad()
+
+    for batch_idx, (sequences, mask, targets) in enumerate(train_loader):
         sequences = sequences.to(device)
         mask = mask.to(device)
         targets = targets.to(device)
 
-        optimizer.zero_grad()
         predictions = model(sequences, mask)
         loss = criterion(predictions, targets)
-        loss.backward()
-        optimizer.step()
+        scaled_loss = loss / accum_steps
+        scaled_loss.backward()
 
         total_loss += loss.item()
         num_batches += 1
+
+        is_accum_step = (batch_idx + 1) % accum_steps == 0
+        is_last_batch = (batch_idx + 1) == num_train_batches
+
+        if is_accum_step or is_last_batch:
+            optimizer.step()
+            optimizer.zero_grad()
 
     return total_loss / num_batches
 
@@ -167,24 +217,39 @@ def train_model(
 ) -> None:
     """Train the model for the configured number of epochs.
 
-    Logs per-epoch training and validation MSE in normalized target space.
+    Logs per-epoch learning rate, training MSE, and validation MSE in normalized
+    target space. Effective batch size is
+    ``batch_size * gradient_accumulation_steps``.
 
     Args:
         model: Expression Transformer model (already on device).
         train_loader: Training DataLoader.
         val_loader: Validation DataLoader.
-        config: Hyperparameter dict with ``lr`` and ``epochs``.
+        config: Hyperparameter dict with ``start_lr``, ``max_lr``,
+            ``warmup_period``, ``gradient_accumulation_steps``, and ``epochs``.
         device: Target device string.
     """
-    optimizer = torch.optim.AdamW(model.parameters(), lr=config["lr"])
+    accum_steps = config["gradient_accumulation_steps"]
+    if accum_steps < 1:
+        raise ValueError("gradient_accumulation_steps must be >= 1")
+
+    optimizer = torch.optim.AdamW(model.parameters(), lr=config["start_lr"])
     criterion = nn.MSELoss()
 
     for epoch in range(1, config["epochs"] + 1):
+        current_lr = get_lr_for_epoch(epoch, config)
+        set_optimizer_lr(optimizer, current_lr)
+
         train_mse = run_training_epoch(
-            model, train_loader, optimizer, criterion, device
+            model,
+            train_loader,
+            optimizer,
+            criterion,
+            device,
+            accum_steps,
         )
         val_mse = run_validation_epoch(model, val_loader, device)
         print(
-            f"Epoch {epoch}/{config['epochs']} | "
+            f"Epoch {epoch}/{config['epochs']} | LR: {current_lr:.2e} | "
             f"Train MSE (norm): {train_mse:.6f} | Val MSE (norm): {val_mse:.6f}"
         )

@@ -1,0 +1,2 @@
+# python src/train.py --data synthetic_data/1_small.tsv --log-file 1_small.log --normalizer-file target_normalizer.json
+python src/train.py --data synthetic_data/batch1_v2.tsv --log-file 2_large.log --normalizer-file target_normalizer_large.json
