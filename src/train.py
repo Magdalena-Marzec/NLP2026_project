@@ -26,11 +26,15 @@ CONFIG = {
     "tokenization": "kmer",
     "kmer_size": 6,
     "kmer_stride": 1,
-    "max_seq_len": 1500,
+    "max_seq_len": 2196,
     # Model params
     "d_model": 128,
     "n_heads": 4,
     "n_layers": 4,
+    "local_n_layers": 2,
+    "global_n_layers": 2,
+    "chunk_size_tokens": 32,
+    "chunk_stride_tokens": 24,
     "d_mlp": 512,
     "dropout": 0.2,
     # Training params
