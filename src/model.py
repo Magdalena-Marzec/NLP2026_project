@@ -315,7 +315,6 @@ class ExpressionTransformer(nn.Module):
         self.token_embedding = nn.Embedding(
             vocab_size, d_model, padding_idx=pad_id
         )
-        self.dna_positional_embedding = nn.Embedding(max_dna_len, d_model)
         self.transformer_positional_embedding = nn.Embedding(
             transformer_max_len, d_model
         )
@@ -359,10 +358,6 @@ class ExpressionTransformer(nn.Module):
 
         # DNA embeddings — Shape: (B, L_dna, D)
         dna_x = self.token_embedding(dna_tokens)
-        dna_positions = torch.arange(dna_len, device=dna_tokens.device).unsqueeze(
-            0
-        ).expand(batch_size, dna_len)
-        dna_x = dna_x + self.dna_positional_embedding(dna_positions)
 
         # CNN local features — Shape: (B, L_conv, D)
         dna_x, conv_mask = self.conv_block(dna_x, dna_padding_mask)
